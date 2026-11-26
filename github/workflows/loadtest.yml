@@ -1,0 +1,48 @@
+name: Load Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: 'Сколько раз повторить весь диапазон 100-1000'
+        required: false
+        default: '1'
+
+jobs:
+  loadtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Установка apache2-utils
+        run: sudo apt-get update && sudo apt-get install -y apache2-utils
+
+      - name: Запуск теста
+        run: |
+          URL="https://aist-armavir.tw1.ru/"
+          REPEATS="${{ github.event.inputs.repeats }}"
+
+          for run in $(seq 1 $REPEATS); do
+            echo "########## ПРОГОН $run из $REPEATS ##########"
+
+            for c in  200 2000 3000 4000 5000 6000 7000 8000 9000 10000; do
+              echo ""
+              echo "### Прогон $run | Уровень нагрузки: concurrency=$c ###"
+
+              ab -n 1000 -c $c -f TLS1.2 "$URL" > ab_output.txt 2>&1 || true
+              cat ab_output.txt
+
+              FAILED=$(grep "Failed requests" ab_output.txt | awk '{print $3}')
+              RPS=$(grep "Requests per second" ab_output.txt | awk '{print $4}')
+              TPR=$(grep "Time per request" ab_output.txt | head -n 1 | awk '{print $4}')
+
+              echo "ИТОГ Прогон $run | Уровень $c: failed=$FAILED rps=$RPS time_per_req=${TPR}ms"
+
+              if [ "$FAILED" -gt 0 ] 2>/dev/null; then
+                echo "!!! ПИК НАЙДЕН на concurrency=$c (failed=$FAILED) !!!"
+                exit 0
+              fi
+
+              sleep 3
+            done
+          done
+
+          echo "ВСЕ ПРОГОНЫ ЗАВЕРШЕНЫ"
